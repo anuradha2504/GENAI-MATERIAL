@@ -1,22 +1,21 @@
-name: Deploy Travel Agent to Amazon ECR
-# This is the "Brain" of the detection
+name: Deploy Travel Agent
+
 on:
   push:
     branches:
       - master
-    # IMPORTANT: Only trigger if files in the Travel Agent directory change
     paths:
-      - 'TRAVEL-LANGGRAPH-AGENT/**' # Triggers only when this folder changes
-  workflow_dispatch: # This adds a "Run Workflow" button for manual testing
+      - 'TRAVEL-LANGGRAPH-AGENT/**'
+  workflow_dispatch: 
 
 permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Build and Push
   build-and-push:
+    name: Build and Push to ECR
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -32,25 +31,19 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image
+      - name: Build, Tag, and Push Image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # 1. Move to the directory where the Dockerfile lives
+          # Navigate to the context directory
           cd TRAVEL-LANGGRAPH-AGENT/langgraph-agent
           
-          # 2. Build the image
-          # The '.' here points to langgraph-agent/ as the build context
+          # Build once with multiple tags
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           
-          # 3. Push to ECR
-          # Use the path relative to your git root
-          cd TRAVEL-LANGGRAPH-AGENT/langgraph-agent
-          
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-          
+          # Push both tags
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
