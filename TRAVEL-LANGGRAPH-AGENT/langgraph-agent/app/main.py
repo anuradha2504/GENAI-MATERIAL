@@ -1,11 +1,18 @@
 from fastapi import Body, FastAPI, HTTPException
 
-from app.config import logger
+from app.bookings import get_booking_record, save_booking_record, setup_bookings_table
+from app.config import BOOKINGS_TABLE_SETUP, logger
 from app.graph import graph
 from app.nodes import activity_agent, booking_node, budget_check_node
 
 
 app = FastAPI(title="Travel Agent API")
+
+
+@app.on_event("startup")
+def startup():
+    if BOOKINGS_TABLE_SETUP:
+        setup_bookings_table()
 
 
 def _config(thread_id: str) -> dict:
@@ -166,12 +173,19 @@ async def chat(payload: dict = Body(...)):
             if not current.get("is_booked"):
                 current.update(booking_node(current))
                 _merge_state(thread_id, current)
-            _persist_booking_reference(current["booking_reference"], thread_id, _state(thread_id))
+            current = _state(thread_id)
+            _persist_booking_reference(current["booking_reference"], thread_id, current)
+            booking_response = _itinerary_response(current)
+            save_booking_record(thread_id, current, booking_response)
 
         elif action == "retrieve":
             requested_reference = payload.get("reference")
             if requested_reference:
                 reference = requested_reference.upper()
+                booking_record = get_booking_record(reference)
+                if booking_record:
+                    return _itinerary_response(booking_record)
+
                 current = _state(_booking_thread_id(reference))
                 if not current:
                     legacy_state = _state(reference)

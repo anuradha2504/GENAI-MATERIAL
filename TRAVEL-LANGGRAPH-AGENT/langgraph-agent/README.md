@@ -41,6 +41,9 @@ LANGGRAPH_POSTGRES_POOL_MAX_SIZE=5
 LANGGRAPH_POSTGRES_POOL_MAX_IDLE=300
 LANGGRAPH_POSTGRES_POOL_MAX_LIFETIME=300
 LANGGRAPH_POSTGRES_POOL_TIMEOUT=30
+BOOKINGS_TABLE_ENABLED=true
+BOOKINGS_TABLE_SETUP=false
+BOOKINGS_TABLE_NAME=bookings
 ```
 
 LangGraph remains the primary state store for active conversations. Every active conversation is keyed by the `thread_id` passed from the UI.
@@ -48,6 +51,37 @@ LangGraph remains the primary state store for active conversations. Every active
 For local demos, use `CHECKPOINTER_TYPE=memory`; state is available only while the backend process is alive. For production/ECS, use `CHECKPOINTER_TYPE=postgres` and provide `LANGGRAPH_POSTGRES_URI` or `DATABASE_URL` from Secrets Manager/SSM. The service uses psycopg pooling with connection health checks so stale database connections can be replaced across requests. `LANGGRAPH_POSTGRES_POOL_MODE=null` is recommended for Neon/serverless poolers because it avoids holding idle SSL sessions in the ECS task. Use `pooled` only when you control the database connection lifecycle and want persistent client-side pooling. Set `LANGGRAPH_POSTGRES_SETUP=true` once to create/migrate the checkpointer tables, then set it back to `false` for normal runtime.
 
 After confirmation, the backend writes the same full itinerary state under the generated `TRV-XXXXXX` booking reference as a LangGraph thread alias. This lets `/retrieve TRV-XXXXXX` return the complete itinerary from the configured LangGraph checkpointer without a separate file store.
+
+Confirmed bookings are also upserted into a dedicated business table, controlled by `BOOKINGS_TABLE_ENABLED`. This table is separate from LangGraph checkpoint tables and is intended for customer support, reporting, audit, and reliable direct lookup by booking reference.
+
+Set `BOOKINGS_TABLE_SETUP=true` once during initial deployment to create the table and indexes, then set it back to `false`.
+
+Schema managed by the application:
+
+```sql
+CREATE TABLE IF NOT EXISTS bookings (
+    booking_reference TEXT PRIMARY KEY,
+    source_thread_id TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    travel_date DATE,
+    origin_iata TEXT,
+    destination_iata TEXT,
+    selected_flight_info TEXT,
+    selected_flight_price NUMERIC(10, 2),
+    selected_hotel_name TEXT,
+    selected_hotel_price NUMERIC(10, 2),
+    hotel_skipped BOOLEAN DEFAULT FALSE,
+    total_budget NUMERIC(10, 2),
+    amount_planned NUMERIC(10, 2),
+    remaining_budget NUMERIC(10, 2),
+    activities JSONB DEFAULT '[]'::jsonb,
+    itinerary JSONB NOT NULL,
+    status TEXT DEFAULT 'confirmed',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
 ## UI Environment
 
